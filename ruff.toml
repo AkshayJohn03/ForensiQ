@@ -1,0 +1,24 @@
+# Ruff configuration for ForensiQ.
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]
+
+[lint.pycodestyle]
+max-line-length = 120
+
+[lint.per-file-ignores]
+# DEFENSIVE-EXCEPT JUSTIFICATION: ingest loaders and the optional LLM/Langfuse
+# paths deliberately catch broad `Exception` (never bare `except:`):
+#   * loaders.py  - a single malformed tenant trace must never kill a whole
+#     ingest batch; the failure is collected into `warnings` and surfaced.
+#   * llm.py / classifier.py - the optional LLM second pass must degrade to the
+#     offline heuristic fallback on any provider error; failure forensics has
+#     to work during the outage that caused the failures it is analyzing.
+# B902/B904 stay enabled everywhere else; every broad except here re-raises or
+# records context, it never silently swallows.
+"src/forensiq/ingest/loaders.py" = ["BLE001"]
+"src/forensiq/llm.py" = ["BLE001"]
+"src/forensiq/taxonomy/classifier.py" = ["BLE001"]
+"src/forensiq/cli.py" = ["BLE001"]

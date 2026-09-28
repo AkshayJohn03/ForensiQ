@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "forensiq"
+version = "0.1.0"
+description = "Failure forensics for AI pipelines: trace ingestion, failure taxonomy, root-cause attribution, drift detection, RCA reports."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Akshay John Xavier" }]
+keywords = ["rag", "llm", "observability", "failure-analysis", "rca", "langfuse"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "pydantic>=2",
+    "pydantic-settings>=2",
+    "pytest>=8",
+    "httpx>=0.27",
+    "pyyaml>=6",
+    "numpy>=1.26",
+    "ruff>=0.6",
+]
+
+[project.optional-dependencies]
+# The Langfuse REST pull uses httpx directly (already a required dep). This extra
+# is reserved for the langfuse SDK itself (e.g. re-exporting traces back).
+langfuse = []
+
+[project.scripts]
+forensiq = "forensiq.cli:main"
+
+[project.urls]
+Repository = "https://github.com/AkshayJohn03/ForensiQ"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/forensiq"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "README.md", "ruff.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
