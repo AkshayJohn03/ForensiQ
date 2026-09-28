@@ -4,6 +4,21 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](ruff.toml)
 
+
+## 🟢 New to AI? Read this first
+
+**The problem, in human terms.** An AI search assistant starts giving bad answers. Nobody knows why. The engineer guesses: bad documents? broken search? a model update? Without a recording of what happened inside each request, debugging is Ouija-board work — and Tuesday's fix might break Wednesday.
+
+**What this project does.** ForensiQ is the **flight recorder + detective** for AI pipelines:
+
+- **It records.** Every request leaves a trace — what was searched, what was found, what was sent to the model, what came back. ForensiQ ingests those traces (from Langfuse, the industry's standard flight-recorder, or plain JSON files) and normalises them.
+- **It names the failure.** A rulebook of known failure types — "search returned nothing" (F-RET-001), "prompt got silently truncated" (F-PROMPT-002), "model got stuck repeating itself" (F-GEN-003), and so on — is checked first; only genuinely ambiguous cases go to an AI classifier. On a seeded 560-trace corpus with planted failures, this two-pass approach scores **precision and recall of 1.0** against the known ground truth.
+- **It points at the guilty stage.** For each failure it ranks *which stage* of the assembly line is to blame, with the evidence quoted from the trace. On planted-failure fixtures it puts the true root cause first **100% of the time**.
+- **It spots the slow leak.** Some rot isn't a crash — search quality quietly degrades over weeks. A statistical drift detector (a hand-rolled chi-square test) compares this week's failure mix against a baseline window and raises an alarm when the shift is too big to be luck (and stays quiet when it is luck — no false alarms at the 1% significance level).
+- **It writes the incident report.** A generated RCA (root-cause-analysis) document with a timeline, a blame diagram, the evidence, and a mapped fix from a playbook — the artifact a manager actually reads the morning after.
+
+**Measured outcomes:** 128 automated tests pass offline in ~4s — including the planted-ground-truth scoring above, clustering that recovers all 8 planted failure families perfectly, and a counterfactual replay module ("would raising the result count have fixed this?") that is honest about being an estimate. It speaks the exact vocabulary of the author's RAG_showcase pipeline, so traces flow in with zero glue code.
+
 **Most RAG observability stops at "the answer was bad".** ForensiQ answers the
 senior questions: *which* failure is it (by taxonomy id), *which stage* caused
 it (with evidence, not vibes), *is it getting worse* (drift, tested not
