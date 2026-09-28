@@ -1,0 +1,21 @@
+# ForensiQ playbook overrides (YAML).
+# Keys mirror docs/TAXONOMY.md ids; values become the "Mapped fixes" lines in
+# RCA reports. Anything omitted falls back to the built-in PLAYBOOKS table in
+# src/forensiq/report/rca.py.
+playbooks:
+  F-RET-001: >-
+    Check index freshness and embed-model consistency; verify the query reached
+    the right collection/namespace; add a no-hits fallback query.
+  F-RET-002: >-
+    Check index freshness / embedding model drift; re-embed stale chunks; raise
+    hybrid BM25 weight for keyword-heavy queries; raise top_k only after score
+    review.
+  F-PROMPT-001: >-
+    Trim retrieved context (fewer/smaller chunks, parent-child summarization)
+    or raise the context window; alert on prompt_chars near the ceiling.
+  F-GEN-001: >-
+    Enforce structured output (JSON schema / function calling), lower
+    temperature for extraction, add a parse-repair retry with one re-ask.
+  F-INFRA-002: >-
+    Cap prompt growth (context budget), check for retry loops re-sending the
+    prompt, add per-trace cost guardrails.
