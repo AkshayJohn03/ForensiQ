@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<title>ForensiQ — whiteboard lecture</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  @font-face {
+    font-family: "Ink Free";
+    src: url("assets/fonts/Inkfree.ttf") format("truetype");
+    font-weight: normal; font-style: normal;
+  }
+  :root {
+    --board: #13211d;
+    --chalk: #f2f0e9;
+    --chalk-dim: #d5d2c6;
+    --amber: #f5b942;
+    --teal: #63d3c3;
+    --blue: #9ec5e8;
+    --line: rgba(242, 240, 233, 0.25);
+  }
+  body { margin: 0; background: #0d1714; }
+  #root {
+    position: relative; width: 100%; height: 100%; overflow: hidden;
+    background:
+      radial-gradient(1400px 900px at 42% 38%, rgba(255,255,255,0.05), rgba(0,0,0,0) 62%),
+      radial-gradient(1200px 800px at 85% 90%, rgba(0,0,0,0.28), rgba(0,0,0,0) 60%),
+      var(--board);
+    color: var(--chalk);
+    font-family: system-ui, sans-serif;
+  }
+  .clip { position: absolute; inset: 0; }
+  .scene-inner { position: absolute; inset: 0; }
+  .board {
+    position: absolute; inset: 0; box-sizing: border-box;
+    display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 34px;
+    padding: 52px 60px 88px;
+  }
+  .main { position: relative; min-width: 0; }
+  .rail { position: relative; display: flex; flex-direction: column; gap: 14px; justify-content: center; min-width: 0; }
+  h1 {
+    margin: 0 0 22px 0; font-family: "Ink Free", system-ui, sans-serif;
+    font-weight: 400; font-size: 50px; line-height: 1.08; color: var(--chalk);
+  }
+  .u { display: block; width: 240px; height: 5px; margin-top: 12px; border-radius: 3px;
+       background: linear-gradient(90deg, var(--amber), rgba(245,185,66,0.15)); }
+  .u.teal { background: linear-gradient(90deg, var(--teal), rgba(99,211,195,0.15)); }
+  .scene-tag {
+    position: absolute; left: 60px; bottom: 30px;
+    font-family: "Ink Free", system-ui, sans-serif; font-size: 26px; color: var(--chalk-dim);
+  }
+  .kcard {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--line);
+    border-left: 5px solid var(--teal); border-radius: 10px; padding: 14px 18px;
+  }
+  .kcard.amber { border-left-color: var(--amber); }
+  .kcard.blue { border-left-color: var(--blue); }
+  .kcard .term { font-family: "Ink Free", system-ui, sans-serif; font-size: 28px; color: var(--chalk); display: block; }
+  .kcard .def { display: block; margin-top: 4px; font-size: 21.5px; line-height: 1.32; color: var(--chalk-dim); }
+  .panel {
+    background: rgba(255,255,255,0.045); border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .panel .cap { font-family: "Ink Free", system-ui, sans-serif; font-size: 25px; color: var(--chalk); display: block; margin-bottom: 8px; }
+  .mono { font-family: ui-monospace, monospace; }
+  .chip { display: inline-block; border-radius: 999px; padding: 4px 14px; font-size: 22px; font-weight: 600; }
+  .chip.amber { background: var(--amber); color: #241a06; }
+  .chip.teal { background: var(--teal); color: #0d2621; }
+  .chip.ghost { border: 1.5px solid var(--line); color: var(--chalk-dim); }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .dim { color: var(--chalk-dim); }
+  .amber { color: var(--amber); }
+  .teal { color: var(--teal); }
+  .blue { color: var(--blue); }
+  svg.stroke { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .absbox { position: absolute; box-sizing: border-box; }
+
+  /* scene 1 — the Tuesday problem */
+  #s1-title { position: absolute; left: 40px; top: 40px; }
+  #s1-title .t { font-family: "Ink Free", system-ui, sans-serif; font-size: 58px; display: block; }
+  #s1-title .s { font-size: 26px; color: var(--chalk-dim); display: block; margin-top: 4px; }
+  #s1-cal { position: absolute; left: 0; top: 190px; width: 560px; display: flex; align-items: center; gap: 18px; }
+  .day { border: 3px solid var(--teal); border-radius: 12px; padding: 14px 20px; width: 190px; background: rgba(99,211,195,0.05); }
+  .day .d { font-family: "Ink Free", system-ui, sans-serif; font-size: 30px; display: block; }
+  .day .v { display: block; margin-top: 4px; font-size: 20px; color: var(--chalk-dim); }
+  .day.bad { border-color: var(--amber); background: rgba(245,185,66,0.05); }
+  #s1-logs { position: absolute; left: 0; top: 400px; width: 560px; }
+  .logwall { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 18px; font-size: 19px; line-height: 1.55; }
+  .logwall .ln { color: var(--chalk-dim); }
+  .logwall .more { color: var(--amber); font-size: 21px; margin-top: 4px; display: block; }
+  #s1-ask { position: absolute; left: 620px; top: 190px; width: 640px; }
+  .qcard { background: rgba(99,211,195,0.08); border: 1.5px solid var(--teal); border-radius: 16px; padding: 18px 22px; }
+  .qcard .q { font-size: 27px; line-height: 1.3; }
+  .qcard .who { display: block; margin-top: 10px; font-size: 19px; color: var(--chalk-dim); }
+  #s1-wrong { position: absolute; left: 620px; top: 380px; width: 640px; border: 2.5px solid var(--amber); border-radius: 14px; padding: 16px 22px; background: rgba(245,185,66,0.05); }
+  #s1-wrong .a { font-size: 26px; }
+  #s1-wrong .note { display: block; margin-top: 8px; font-size: 20px; color: var(--amber); }
+  #s1-ouija { position: absolute; left: 620px; top: 590px; width: 640px; font-size: 27px; line-height: 1.4; color: var(--chalk); border-left: 4px solid var(--amber); padding-left: 18px; }
+
+  /* scene 2 — the black box */
+  #s2-trace { position: absolute; left: 0; top: 165px; width: 760px; }
+  .tracecard { border: 2px solid var(--blue); border-radius: 14px; padding: 14px 18px; background: rgba(158,197,232,0.04); }
+  .tracecard .th { display: flex; justify-content: space-between; font-family: "Ink Free", system-ui, sans-serif; font-size: 26px; color: var(--blue); margin-bottom: 10px; }
+  .spanrow { display: flex; align-items: baseline; gap: 12px; border-top: 1.5px dashed var(--line); padding: 9px 0 9px 26px; }
+  .spanrow .stag { min-width: 150px; font-family: "Ink Free", system-ui, sans-serif; font-size: 25px; color: var(--chalk); }
+  .spanrow .sattr { font-family: ui-monospace, monospace; font-size: 19px; color: var(--chalk-dim); }
+  .spanrow .sid { font-family: ui-monospace, monospace; font-size: 17px; color: var(--blue); min-width: 30px; }
+  #s2-bb { position: absolute; left: 0; top: 640px; font-family: "Ink Free", system-ui, sans-serif; font-size: 34px; color: var(--amber); }
+  #s2-ingest { position: absolute; left: 820px; top: 165px; width: 440px; }
+  .codebox { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 16px; font-family: ui-monospace, monospace; font-size: 18.5px; line-height: 1.5; color: var(--chalk-dim); }
+  #s2-norm { position: absolute; left: 820px; top: 400px; width: 440px; font-size: 23px; line-height: 1.5; color: var(--chalk); }
+  #s2-norm .map { display: block; margin-top: 10px; font-family: ui-monospace, monospace; font-size: 21px; color: var(--teal); }
+
+  /* scene 3 — taxonomy */
+  #s3-fams { position: absolute; left: 0; top: 165px; width: 1200px; }
+  .fam { display: flex; align-items: baseline; gap: 16px; border-top: 1.5px dashed var(--line); padding: 10px 0; }
+  .fam:first-child { border-top: none; }
+  .fam .fid { min-width: 200px; font-family: "Ink Free", system-ui, sans-serif; font-size: 27px; color: var(--amber); }
+  .fam .fx { font-size: 21px; color: var(--chalk); }
+  .fam .fs { font-family: ui-monospace, monospace; font-size: 18.5px; color: var(--chalk-dim); }
+  #s3-hero { position: absolute; left: 0; top: 560px; width: 1200px; border: 2.5px solid var(--amber); border-radius: 14px; padding: 16px 22px; background: rgba(245,185,66,0.05); }
+  #s3-hero .hid { font-family: "Ink Free", system-ui, sans-serif; font-size: 30px; color: var(--amber); display: block; }
+  #s3-hero .sig { display: block; margin-top: 6px; font-family: ui-monospace, monospace; font-size: 21px; color: var(--chalk); }
+  #s3-hero .pb { display: block; margin-top: 6px; font-size: 20px; color: var(--teal); }
+
+  /* scene 4 — two-pass */
+  #s4-rules { position: absolute; left: 0; top: 165px; width: 1200px; }
+  .desk { border: 2px solid var(--blue); border-radius: 14px; padding: 14px 20px; background: rgba(158,197,232,0.04); }
+  .desk .cap4 { font-family: "Ink Free", system-ui, sans-serif; font-size: 27px; color: var(--blue); display: block; margin-bottom: 10px; }
+  .rulechips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .rchip { border: 1.5px solid var(--teal); color: var(--teal); border-radius: 8px; padding: 6px 12px; font-family: ui-monospace, monospace; font-size: 19px; }
+  #s4-flow { position: absolute; left: 0; top: 430px; width: 1200px; display: flex; gap: 20px; align-items: stretch; }
+  #s4-leftovers { flex: 1.1; border: 2px dashed var(--amber); border-radius: 14px; padding: 12px 18px; }
+  #s4-leftovers .lt { font-size: 21.5px; color: var(--chalk); line-height: 1.45; display: block; }
+  #s4-llmdesk { flex: 1.4; }
+  #s4-llmdesk .cap4 { color: var(--amber); }
+  #s4-llmdesk .lt { font-size: 21.5px; color: var(--chalk-dim); line-height: 1.45; display: block; }
+  .flowarrow { align-self: center; font-size: 30px; color: var(--chalk-dim); }
+  #s4-trade { position: absolute; left: 0; top: 660px; width: 1200px; font-size: 23px; color: var(--chalk); border-left: 4px solid var(--amber); padding-left: 16px; line-height: 1.45; }
+
+  /* scene 5 — blame */
+  #s5-line { position: absolute; left: 0; top: 165px; width: 1200px; display: flex; gap: 12px; align-items: center; }
+  .station { border: 2px solid var(--line); border-radius: 10px; padding: 10px 0 12px; width: 240px; text-align: center; background: rgba(255,255,255,0.035); }
+  .station .sn { font-family: "Ink Free", system-ui, sans-serif; font-size: 26px; color: var(--chalk); display: block; }
+  .station .gauge { display: block; height: 10px; border-radius: 5px; background: rgba(255,255,255,0.10); margin: 8px 16px 0; overflow: hidden; }
+  .station .gauge i { display: block; height: 100%; border-radius: 5px; }
+  .station.sick { border-color: var(--amber); }
+  .pipe-arrow { color: var(--chalk-dim); font-size: 26px; }
+  #s5-z { position: absolute; left: 0; top: 360px; width: 1200px; }
+  .zbar-wrap { position: relative; height: 120px; }
+  .zbar { position: absolute; left: 60px; right: 60px; top: 58px; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.12); }
+  .ztick { position: absolute; top: 50px; width: 2.5px; height: 24px; background: var(--chalk-dim); }
+  .ztick .zl { position: absolute; top: 26px; left: -18px; width: 40px; text-align: center; font-size: 17.5px; color: var(--chalk-dim); }
+  .zdot { position: absolute; top: 48px; width: 20px; height: 20px; border-radius: 50%; background: var(--amber); }
+  .zcall { position: absolute; top: 0; font-size: 21.5px; color: var(--amber); }
+  #s5-agree { position: absolute; left: 0; top: 500px; width: 1200px; font-size: 24px; color: var(--chalk); }
+  #s5-verdict { position: absolute; left: 0; top: 556px; width: 560px; border: 2.5px solid var(--teal); border-radius: 14px; padding: 14px 20px; background: rgba(99,211,195,0.05); }
+  #s5-verdict .v5 { font-family: ui-monospace, monospace; font-size: 25px; color: var(--teal); display: block; }
+  #s5-verdict .e5 { display: block; margin-top: 6px; font-size: 19.5px; color: var(--chalk-dim); }
+  #s5-pct { position: absolute; left: 620px; top: 556px; width: 580px; }
+  #s5-pct .big { font-family: "Ink Free", system-ui, sans-serif; font-size: 58px; color: var(--teal); display: block; line-height: 1; }
+  #s5-pct .small { display: block; margin-top: 8px; font-size: 21.5px; color: var(--chalk-dim); line-height: 1.4; }
+  #s5-ev { position: absolute; left: 0; top: 700px; width: 1200px; font-size: 21px; color: var(--chalk-dim); font-family: ui-monospace, monospace; }
+
+  /* scene 6 — drift */
+  #s6-chart { position: absolute; left: 0; top: 165px; width: 700px; }
+  #s6-chart svg { display: block; }
+  #s6-side { position: absolute; left: 760px; top: 165px; width: 440px; }
+  .alarmbox { border: 2.5px solid var(--amber); border-radius: 14px; padding: 14px 20px; background: rgba(245,185,66,0.05); }
+  .alarmbox .p6 { font-family: ui-monospace, monospace; font-size: 24px; color: var(--amber); display: block; }
+  .alarmbox .a6 { display: block; margin-top: 6px; font-size: 20px; color: var(--chalk-dim); line-height: 1.4; }
+  #s6-rule6 { position: absolute; left: 760px; top: 400px; width: 440px; font-size: 21.5px; color: var(--chalk); line-height: 1.5; }
+  #s6-rule6 b { color: var(--teal); }
+  #s6-cusum { position: absolute; left: 760px; top: 540px; width: 440px; font-size: 21.5px; color: var(--chalk-dim); line-height: 1.5; border-left: 4px solid var(--blue); padding-left: 14px; }
+  #s6-caveat { position: absolute; left: 0; top: 660px; width: 1200px; font-size: 22.5px; color: var(--chalk); border-left: 4px solid var(--amber); padding-left: 16px; line-height: 1.45; }
+
+  /* scene 7 — the report */
+  #s7-doc { position: absolute; left: 0; top: 165px; width: 780px; border: 2px solid var(--line); border-radius: 14px; padding: 18px 24px; background: rgba(255,255,255,0.03); }
+  #s7-doc .rt { font-family: "Ink Free", system-ui, sans-serif; font-size: 28px; color: var(--chalk); display: block; border-bottom: 1.5px dashed var(--line); padding-bottom: 8px; }
+  #s7-doc .sec { display: block; margin-top: 12px; font-size: 20.5px; color: var(--chalk-dim); line-height: 1.45; }
+  #s7-doc .sec b { color: var(--chalk); font-weight: 600; }
+  #s7-doc .mixbar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; margin-top: 6px; }
+  #s7-doc .mixbar i { display: block; height: 100%; }
+  #s7-doc .mgraph { font-family: ui-monospace, monospace; font-size: 19.5px; color: var(--teal); margin-top: 4px; }
+  #s7-exports { position: absolute; left: 0; top: 700px; width: 780px; font-size: 20.5px; color: var(--chalk-dim); font-family: ui-monospace, monospace; }
+  #s7-det { position: absolute; left: 840px; top: 250px; width: 360px; font-size: 23px; color: var(--chalk); line-height: 1.5; border-left: 4px solid var(--teal); padding-left: 16px; }
+  #s7-cli { position: absolute; left: 840px; top: 470px; width: 360px; }
+  #s7-cli .codebox { font-size: 17.5px; }
+
+  /* scene 8 — numbers */
+  #s8-grid { position: absolute; left: 0; top: 165px; width: 1200px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .stat { border: 1.5px solid var(--line); border-radius: 14px; padding: 18px 22px; background: rgba(255,255,255,0.035); }
+  .stat .n { font-family: "Ink Free", system-ui, sans-serif; font-size: 62px; color: var(--teal); line-height: 1; display: block; }
+  .stat .n.amber { color: var(--amber); }
+  .stat .t { display: block; margin-top: 8px; font-size: 22px; color: var(--chalk); font-weight: 600; }
+  .stat .w { display: block; margin-top: 6px; font-size: 18.5px; line-height: 1.3; color: var(--chalk-dim); }
+  #s8-note { position: absolute; left: 0; top: 700px; width: 1200px; font-size: 21.5px; color: var(--chalk-dim); border-left: 4px solid var(--amber); padding-left: 16px; line-height: 1.45; }
+  #s8-note b { color: var(--chalk); }
+
+  /* scene 9 — recap */
+  #s9-list { position: absolute; left: 0; top: 170px; width: 1180px; }
+  .r9 { display: flex; gap: 16px; align-items: baseline; padding: 9px 0; border-bottom: 1.5px dashed var(--line); font-size: 25px; }
+  .r9 .dot { color: var(--teal); font-weight: 800; }
+  #s9-end { position: absolute; left: 0; top: 620px; width: 1180px; }
+  #s9-end .big { font-family: "Ink Free", system-ui, sans-serif; font-size: 50px; color: var(--chalk); display: block; }
+  #s9-end .small { font-size: 27px; color: var(--amber); display: block; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="forensiq-lecture" data-start="0" data-width="1920" data-height="1080" data-duration="407.159">
+
+  <!-- ============ SCENE 1 : the Tuesday problem ============ -->
+  <section id="s1" class="clip" data-start="0.000" data-duration="43.081">
+    <div class="scene-inner" id="s1-inner">
+      <div class="board">
+        <div class="main">
+          <div id="s1-title">
+            <span class="t">ForensiQ</span>
+            <span class="s">the flight recorder + detective for AI pipelines — a whiteboard lecture</span>
+          </div>
+          <div id="s1-cal">
+            <div class="day" id="d1-mon">
+              <span class="d">Monday</span>
+              <span class="v">pipeline fine — 0.91 faithfulness</span>
+            </div>
+            <div class="pipe-arrow">→</div>
+            <div class="day bad" id="d1-tue">
+              <span class="d">Tuesday</span>
+              <span class="v">bad answers · nobody knows why</span>
+            </div>
+          </div>
+          <div id="s1-logs">
+            <div class="logwall">
+              <span class="ln">POST /ask 200 1.21s · POST /ask 200 1.35s · POST /ask 500 0.9s</span>
+              <span class="ln">POST /ask 200 1.18s · POST /ask 200 1.44s · POST /ask 200 1.02s</span>
+              <span class="ln">POST /ask 200 1.27s · POST /ask 200 1.31s · POST /ask 200 1.29s</span>
+              <span class="more">… ×412,037 lines. Good luck.</span>
+            </div>
+          </div>
+          <div id="s1-ask">
+            <div class="qcard">
+              <div class="q">“What’s the service interval for the XK-7 spindle?”</div>
+              <span class="who">the assistant answered confidently. Since Tuesday, wrongly.</span>
+            </div>
+          </div>
+          <div id="s1-wrong">
+            <span class="a">“Every 50 hours.” <span class="dim">— the manual says 500.</span></span>
+            <span class="note">no crash · no error · no idea where it broke</span>
+          </div>
+          <div id="s1-ouija">Debugging without a recording is Ouija-board work.</div>
+        </div>
+        <div class="rail">
+          <div class="kcard blue" id="kc-forensics">
+            <span class="term">failure forensics</span>
+            <span class="def">Reconstructing what happened inside a pipeline after the fact — from recordings, not guesses.</span>
+          </div>
+          <div class="kcard amber" id="kc-ouija">
+            <span class="term">Ouija-board debugging</span>
+            <span class="def">Poke the system, hope, and repeat. No recording, no evidence, no repeatable diagnosis.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">01 · the Tuesday problem</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 2 : the black box ============ -->
+  <section id="s2" class="clip" data-start="43.081" data-duration="43.389">
+    <div class="scene-inner" id="s2-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Every request leaves a recording<span class="u teal" id="s2-u"></span></h1>
+          <div id="s2-trace">
+            <div class="tracecard">
+              <div class="th"><span>trace q-1042</span><span class="dim" style="font-size:20px">one request, start to finish</span></div>
+              <div class="spanrow" id="sp1"><span class="sid">s1</span><span class="stag">embed</span><span class="sattr">12ms · ok · model MiniLM-L6</span></div>
+              <div class="spanrow" id="sp2"><span class="sid">s2</span><span class="stag">retrieve</span><span class="sattr">44ms · ok · top_k 5 · hit_count 5</span></div>
+              <div class="spanrow" id="sp3"><span class="sid">s3</span><span class="stag">rerank</span><span class="sattr">30ms · ok · rerank_top1 0.95</span></div>
+              <div class="spanrow" id="sp4"><span class="sid">s4</span><span class="stag">generate</span><span class="sattr">1800ms · ok · finish_reason “stop”</span></div>
+            </div>
+          </div>
+          <div id="s2-bb">The aeroplane’s black box — for software.</div>
+          <div id="s2-ingest">
+            <div class="panel">
+              <span class="cap">traces in — unchanged</span>
+              <div class="codebox">traces.jsonl — one trace per line<br>{"trace_id":"q-1042",<br> "spans":[{...s1},{...s2}]}<br><br>or Langfuse REST (env-guarded)</div>
+            </div>
+          </div>
+          <div id="s2-norm">
+            Foreign exporters? Normalised on ingest:
+            <span class="map">hybrid · search · retrieval → retrieve</span>
+            <span class="map">generation · llm → generate</span>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-trace">
+            <span class="term">trace</span>
+            <span class="def">One complete record of a single request through the pipeline — the whole story.</span>
+          </div>
+          <div class="kcard blue" id="kc-span">
+            <span class="term">span</span>
+            <span class="def">One step inside a trace, with an id, a parent, and attributes — the evidence.</span>
+          </div>
+          <div class="kcard amber" id="kc-jsonl">
+            <span class="term">JSONL</span>
+            <span class="def">JSON Lines: one JSON object per line — the simplest way to dump traces.</span>
+          </div>
+          <div class="kcard" id="kc-langfuse">
+            <span class="term">Langfuse</span>
+            <span class="def">The industry’s standard flight recorder for LLM apps. It records; ForensiQ detects.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">02 · the black box</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 3 : naming the failure ============ -->
+  <section id="s3" class="clip" data-start="86.470" data-duration="50.600">
+    <div class="scene-inner" id="s3-inner">
+      <div class="board">
+        <div class="main">
+          <h1>“The answer was bad” is not a diagnosis<span class="u" id="s3-u"></span></h1>
+          <div id="s3-fams">
+            <div class="fam" id="f1"><span class="fid">F-RET · retrieval</span><span class="fx">empty set · low-recall context · score collapse</span><span class="fs">hit_count == 0</span></div>
+            <div class="fam" id="f2"><span class="fid">F-PROMPT · prompt</span><span class="fx">silent truncation at the context ceiling</span><span class="fs">finish_reason “length”</span></div>
+            <div class="fam" id="f3"><span class="fid">F-GEN · generation</span><span class="fx">format break · repetition loop · false refusal · ungrounded claim</span><span class="fs">3-gram ×5</span></div>
+            <div class="fam" id="f4"><span class="fid">F-TOOL · tools</span><span class="fx">tool execution error</span><span class="fs">status == “error”</span></div>
+            <div class="fam" id="f5"><span class="fid">F-INFRA · infra</span><span class="fx">stage timeout · cost spike · guard abort</span><span class="fs">cost &gt; p95 × 3</span></div>
+          </div>
+          <div id="s3-hero">
+            <span class="hid">F-RET-001 — empty retrieval set</span>
+            <span class="sig">signature: hit_count == 0 on the retrieve span</span>
+            <span class="pb">playbook → check index freshness · verify the collection · add a no-hits fallback</span>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-taxonomy">
+            <span class="term">failure taxonomy</span>
+            <span class="def">A named catalogue of failure types — every failure gets an id, a stage, a signature.</span>
+          </div>
+          <div class="kcard blue" id="kc-signature">
+            <span class="term">signature</span>
+            <span class="def">The span-attribute pattern that proves the failure — quotable, testable, not vibes.</span>
+          </div>
+          <div class="kcard amber" id="kc-playbook">
+            <span class="term">playbook</span>
+            <span class="def">The agreed first response for each id — the report hands you the next action.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">03 · the taxonomy</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 4 : two-pass classification ============ -->
+  <section id="s4" class="clip" data-start="137.070" data-duration="46.760">
+    <div class="scene-inner" id="s4-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Rules first — the LLM only sees leftovers<span class="u teal" id="s4-u"></span></h1>
+          <div id="s4-rules">
+            <div class="desk">
+              <span class="cap4">pass 1 · nine deterministic rules</span>
+              <div class="rulechips">
+                <span class="rchip" id="rc1">F-INFRA-001</span><span class="rchip" id="rc2">F-TOOL-001</span><span class="rchip" id="rc3">F-RET-001</span><span class="rchip" id="rc4">F-RET-002</span><span class="rchip" id="rc5">F-PROMPT-001</span><span class="rchip" id="rc6">F-GEN-001</span><span class="rchip" id="rc7">F-GEN-002</span><span class="rchip" id="rc8">F-GEN-003</span><span class="rchip" id="rc9">F-INFRA-002</span>
+              </div>
+            </div>
+          </div>
+          <div id="s4-flow">
+            <div id="s4-leftovers">
+              <span class="lt"><b class="amber">ambiguous leftovers</b> — error spans and guard blocks with no rule signature.</span>
+            </div>
+            <div class="flowarrow">→</div>
+            <div class="desk" id="s4-llmdesk">
+              <span class="cap4">pass 2 · optional LLM desk</span>
+              <span class="lt">Only these reach the LLM. LLM down? <b class="teal">EchoMockClient</b> keeps forensics alive.</span>
+            </div>
+          </div>
+          <div id="s4-trade">The honest trade-off: a novel failure with no rule is a <b class="amber">gap in coverage</b> — not a confident wrong answer. And the rules run even during the outage that caused the failures.</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-twopass">
+            <span class="term">two-pass classification</span>
+            <span class="def">Deterministic rules first; an LLM only for genuinely ambiguous leftovers.</span>
+          </div>
+          <div class="kcard blue" id="kc-protocol">
+            <span class="term">LLMClient Protocol</span>
+            <span class="def">The seam the LLM sits behind — swap it, mock it, or unplug it without breaking forensics.</span>
+          </div>
+          <div class="kcard amber" id="kc-precedence">
+            <span class="term">precedence</span>
+            <span class="def">Upstream causes before downstream symptoms: an empty-context refusal is a retrieval problem.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">04 · two-pass classification</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 5 : blame ranking ============ -->
+  <section id="s5" class="clip" data-start="183.830" data-duration="44.029">
+    <div class="scene-inner" id="s5-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Which stage is guilty?<span class="u" id="s5-u"></span></h1>
+          <div id="s5-line">
+            <div class="station" id="st1"><span class="sn">embed</span><span class="gauge"><i style="width:96%;background:var(--teal)"></i></span></div>
+            <div class="pipe-arrow" id="pa1">→</div>
+            <div class="station sick" id="st2"><span class="sn">retrieve</span><span class="gauge"><i style="width:41%;background:var(--amber)"></i></span></div>
+            <div class="pipe-arrow" id="pa2">→</div>
+            <div class="station" id="st3"><span class="sn">rerank</span><span class="gauge"><i style="width:93%;background:var(--teal)"></i></span></div>
+            <div class="pipe-arrow" id="pa3">→</div>
+            <div class="station" id="st4"><span class="sn">generate</span><span class="gauge"><i style="width:88%;background:var(--teal)"></i></span></div>
+          </div>
+          <div id="s5-z">
+            <div class="zbar-wrap">
+              <div class="zbar"></div>
+              <div class="ztick" id="zt-mu" style="left:600px"><span class="zl">μ</span></div>
+              <div class="ztick" id="zt-1" style="left:480px"><span class="zl">−1σ</span></div>
+              <div class="ztick" id="zt-2" style="left:360px"><span class="zl">−2σ</span></div>
+              <div class="zdot" id="zdot" style="left:250px"></div>
+              <div class="zcall" id="zcall">retrieve mean hit-score: 3σ below the healthy baseline</div>
+            </div>
+          </div>
+          <div id="s5-agree">A stage is accused only when the <b class="teal">failure label</b> and the <b class="teal">numbers</b> agree.</div>
+          <div id="s5-verdict">
+            <span class="v5">F-RET-002 → {"retrieve": 1.0}</span>
+            <span class="e5">evidence: mean hit_score 0.41 &lt; 0.5 threshold — quoted from the span</span>
+          </div>
+          <div id="s5-pct">
+            <span class="big">100%</span>
+            <span class="small">blame top-1 on planted-failure fixtures — the true stage ranked first, every time</span>
+          </div>
+          <div id="s5-ev">z = (x − μ) / σ · baseline from healthy traces only · evidence weight agrees</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-blame">
+            <span class="term">blame ranking</span>
+            <span class="def">Rank pipeline stages by how likely each is the root cause — with quoted evidence.</span>
+          </div>
+          <div class="kcard blue" id="kc-zscore">
+            <span class="term">z-score</span>
+            <span class="def">How many standard deviations a value sits from baseline — abnormal, as a number.</span>
+          </div>
+          <div class="kcard amber" id="kc-baseline">
+            <span class="term">healthy baseline</span>
+            <span class="def">Normal behaviour, measured from healthy traces only — so the yardstick stays clean.</span>
+          </div>
+          <div class="kcard" id="kc-evidence">
+            <span class="term">evidence chain</span>
+            <span class="def">The quoted span attributes behind every claim — receipts, not vibes.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">05 · blame ranking</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 6 : the slow leak ============ -->
+  <section id="s6" class="clip" data-start="227.859" data-duration="50.685">
+    <div class="scene-inner" id="s6-inner">
+      <div class="board">
+        <div class="main">
+          <h1>The slow leak — statistical drift<span class="u teal" id="s6-u"></span></h1>
+          <div id="s6-chart">
+            <svg width="700" height="312" viewBox="0 -12 700 312">
+              <rect x="10" y="20" width="289" height="230" fill="rgba(158,197,232,0.07)"></rect>
+              <rect x="543" y="20" width="77" height="230" fill="rgba(245,185,66,0.08)"></rect>
+              <line x1="10" y1="250" x2="620" y2="250" stroke="rgba(242,240,233,0.35)" stroke-width="2"></line>
+              <line x1="10" y1="20" x2="10" y2="250" stroke="rgba(242,240,233,0.35)" stroke-width="2"></line>
+              <polyline fill="none" stroke="#9ec5e8" stroke-width="3"
+                points="10,55 32,50 54,60 77,45 99,55 121,50 143,65 166,55 188,60 210,50 232,55 254,60 277,50 299,55 321,65 343,70 366,75 388,85 410,90 432,100 454,110 477,120 499,130 521,145 543,155 566,170 588,185 610,195"></polyline>
+              <polyline id="s6-decay" fill="none" stroke="#f5b942" stroke-width="3.5"
+                points="299,55 321,65 343,70 366,75 388,85 410,90 432,100 454,110 477,120 499,130 521,145 543,155 566,170 588,185 610,195"></polyline>
+              <line id="s6-kink" x1="321" y1="20" x2="321" y2="250" stroke="#f5b942" stroke-width="2" stroke-dasharray="6 6"></line>
+              <text x="14" y="278" fill="#d5d2c6" font-size="17">day 1</text>
+              <text x="296" y="278" fill="#d5d2c6" font-size="17">day 15 — the kink</text>
+              <text x="556" y="278" fill="#d5d2c6" font-size="17">day 28</text>
+              <text x="14" y="14" fill="#d5d2c6" font-size="17">retrieval hit-score · daily mean</text>
+              <text x="120" y="240" fill="#9ec5e8" font-size="16">baseline · 14 days</text>
+              <text x="543" y="240" fill="#f5b942" font-size="16">trailing · 3 days</text>
+            </svg>
+          </div>
+          <div id="s6-side">
+            <div class="alarmbox" id="s6-alarm">
+              <span class="p6">χ² p = 0.003 &lt; α = 0.01 → ALARM</span>
+              <span class="a6">“has the failure mix shifted more than luck allows?” — a calibrated p-value, not a guessed threshold.</span>
+            </div>
+          </div>
+          <div id="s6-rule6"><b>2-of-3 trailing windows</b> must agree — one noisy window can neither fire the alarm nor reset it.</div>
+          <div id="s6-cusum">CUSUM watches each failure class for slow ramps the window is too blunt to feel.</div>
+          <div id="s6-caveat">Honest caveat: drift measures <b class="amber">change</b>, not <b class="amber">badness</b> — a deliberate change fires too, for a human to bless.</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-drift">
+            <span class="term">statistical drift</span>
+            <span class="def">A gradual shift in the failure mix — not a crash, a leak.</span>
+          </div>
+          <div class="kcard blue" id="kc-chisq">
+            <span class="term">chi-square test</span>
+            <span class="def">Asks whether counts differ from baseline more than sampling noise allows.</span>
+          </div>
+          <div class="kcard" id="kc-pvalue">
+            <span class="term">p-value</span>
+            <span class="def">The odds of seeing this shift if nothing had changed. Small = probably real.</span>
+          </div>
+          <div class="kcard amber" id="kc-alpha">
+            <span class="term">alpha (α)</span>
+            <span class="def">The chosen false-alarm tolerance — here 1%. Alerts fire only below it.</span>
+          </div>
+          <div class="kcard blue" id="kc-cusum">
+            <span class="term">CUSUM</span>
+            <span class="def">A running total of small deviations — built to notice slow ramps early.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">06 · the slow leak</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 7 : the report ============ -->
+  <section id="s7" class="clip" data-start="278.544" data-duration="43.133">
+    <div class="scene-inner" id="s7-inner">
+      <div class="board">
+        <div class="main">
+          <h1>The report a manager reads<span class="u" id="s7-u"></span></h1>
+          <div id="s7-doc">
+            <span class="rt">RCA — 560 traces · 28 days</span>
+            <span class="sec"><b>Executive summary.</b> Retrieval degradation from day 15; F-RET-002 dominates the mix. Top root cause: retrieve stage.</span>
+            <span class="sec"><b>Failure mix</b></span>
+            <div class="mixbar"><i style="width:44%;background:var(--amber)"></i><i style="width:22%;background:rgba(245,185,66,0.55)"></i><i style="width:18%;background:rgba(99,211,195,0.5)"></i><i style="width:16%;background:rgba(255,255,255,0.18)"></i></div>
+            <span class="sec"><b>Blame graph</b> (mermaid — diffs like code)</span>
+            <div class="mgraph">F-RET-002 ──▶ retrieve (1.0) ──▶ re-embed stale chunks</div>
+            <span class="sec"><b>Evidence, quoted.</b> <span class="mono">hit_scores: [0.44, 0.41, 0.38] · mean 0.41 &lt; 0.5</span></span>
+          </div>
+          <div id="s7-exports">exports → postmortem.md · tickets.json · byte-identical across runs</div>
+          <div id="s7-det">Deterministic by design: no wall-clock data, every table sorted. If the report changed, the pipeline changed.</div>
+          <div id="s7-cli">
+            <div class="panel">
+              <span class="cap">the whole flow</span>
+              <div class="codebox">forensiq report \<br>  --file traces.jsonl \<br>  --out rca.md<br><br>forensiq watch   # drift alerts<br>forensiq replay  # test the fix</div>
+            </div>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-rca">
+            <span class="term">RCA</span>
+            <span class="def">Root cause analysis: what failed, which stage, the evidence, the fix.</span>
+          </div>
+          <div class="kcard blue" id="kc-mermaid">
+            <span class="term">mermaid diagram</span>
+            <span class="def">Diagrams as text inside markdown — they render on GitHub and diff like code.</span>
+          </div>
+          <div class="kcard amber" id="kc-determ">
+            <span class="term">determinism</span>
+            <span class="def">Same corpus in, byte-identical report out — report diffing becomes a review tool.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">07 · the RCA</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 8 : the numbers ============ -->
+  <section id="s8" class="clip" data-start="321.677" data-duration="46.077">
+    <div class="scene-inner" id="s8-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Measured, not claimed<span class="u teal" id="s8-u"></span></h1>
+          <div id="s8-grid">
+            <div class="stat" id="sta"><span class="n" id="n-a">0.0</span><span class="t">precision</span><span class="w">every flag was a real planted failure</span></div>
+            <div class="stat" id="stb"><span class="n" id="n-b">0.0</span><span class="t">recall</span><span class="w">nothing slipped past the rulebook</span></div>
+            <div class="stat" id="stc"><span class="n" id="n-c">0%</span><span class="t">blame top-1</span><span class="w">true guilty stage ranked first</span></div>
+            <div class="stat" id="std"><span class="n" id="n-d">0/8</span><span class="t">clusters recovered</span><span class="w">planted failure families found</span></div>
+            <div class="stat" id="ste"><span class="n amber">α=0.01</span><span class="t">drift, honest</span><span class="w">fires day 15 · stable weeks stay silent</span></div>
+            <div class="stat" id="stf"><span class="n" id="n-f">0</span><span class="t">tests, offline</span><span class="w">the whole suite, in ~4 seconds</span></div>
+          </div>
+          <div id="s8-note"><b>Counterfactual replay stays honest:</b> “would top_k = 10 fix it?” — no. Marginal hits dilute the mean score, and an empty index stays empty. It’s an estimate, and it says so.</div>
+        </div>
+        <div class="rail">
+          <div class="kcard" id="kc-planted">
+            <span class="term">planted ground truth</span>
+            <span class="def">Failures inserted on purpose, pre-labelled — so detectors are scored against the key.</span>
+          </div>
+          <div class="kcard blue" id="kc-precision">
+            <span class="term">precision</span>
+            <span class="def">Of everything flagged, how much was real. High precision = no crying wolf.</span>
+          </div>
+          <div class="kcard blue" id="kc-recall">
+            <span class="term">recall</span>
+            <span class="def">Of everything real, how much was caught. High recall = nothing slipped past.</span>
+          </div>
+          <div class="kcard amber" id="kc-replay">
+            <span class="term">counterfactual replay</span>
+            <span class="def">Re-run the failure with one knob changed — and report the predicted effect honestly.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">08 · the numbers</div>
+    </div>
+  </section>
+
+  <!-- ============ SCENE 9 : recap ============ -->
+  <section id="s9" class="clip" data-start="367.754" data-duration="39.404">
+    <div class="scene-inner" id="s9-inner">
+      <div class="board">
+        <div class="main">
+          <h1>Thirty-second recap<span class="u" id="s9-u"></span></h1>
+          <div id="s9-list">
+            <div class="r9" id="r9a"><span class="dot">01</span><span>Record everything — traces and spans are the black box.</span></div>
+            <div class="r9" id="r9b"><span class="dot">02</span><span>Name the failure — taxonomy ids and signatures; rules first, LLM for leftovers.</span></div>
+            <div class="r9" id="r9c"><span class="dot">03</span><span>Point at the stage — z-scores vs a healthy baseline, with quoted evidence.</span></div>
+            <div class="r9" id="r9d"><span class="dot">04</span><span>Watch the slow leak — chi-square at α = 0.01, CUSUM for slow ramps.</span></div>
+            <div class="r9" id="r9e"><span class="dot">05</span><span>Replay the fix — honestly, as an estimate.</span></div>
+            <div class="r9" id="r9f"><span class="dot">06</span><span>Write the RCA — blame graph, evidence, playbook.</span></div>
+          </div>
+          <div id="s9-end">
+            <span class="big">ForensiQ — the flight recorder + the detective.</span>
+            <span class="small">Don’t guess. Read the recording.</span>
+          </div>
+        </div>
+        <div class="rail">
+          <div class="kcard blue" id="kc-glossary">
+            <span class="term">keep learning</span>
+            <span class="def">Every term from this lecture — all 70+ — is defined in GLOSSARY.md, with why it matters here.</span>
+          </div>
+        </div>
+      </div>
+      <div class="scene-tag">09 · recap</div>
+    </div>
+  </section>
+
+  <audio id="music-1" data-start="0.0" data-duration="117.384" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="music-2" data-start="117.384" data-duration="117.384" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="music-3" data-start="234.768" data-duration="117.384" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="music-4" data-start="352.152" data-duration="55.007" data-track-index="10" data-volume="0.13" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+  <audio id="vo-1" data-start="1.200" data-duration="41.381" data-track-index="3" data-volume="1" src="assets/voiceover/voice_01.wav"></audio>
+  <audio id="vo-2" data-start="43.431" data-duration="42.639" data-track-index="4" data-volume="1" src="assets/voiceover/voice_02.wav"></audio>
+  <audio id="vo-3" data-start="86.820" data-duration="49.850" data-track-index="5" data-volume="1" src="assets/voiceover/voice_03.wav"></audio>
+  <audio id="vo-4" data-start="137.420" data-duration="46.010" data-track-index="6" data-volume="1" src="assets/voiceover/voice_04.wav"></audio>
+  <audio id="vo-5" data-start="184.180" data-duration="43.279" data-track-index="7" data-volume="1" src="assets/voiceover/voice_05.wav"></audio>
+  <audio id="vo-6" data-start="228.209" data-duration="49.935" data-track-index="8" data-volume="1" src="assets/voiceover/voice_06.wav"></audio>
+  <audio id="vo-7" data-start="278.894" data-duration="42.383" data-track-index="9" data-volume="1" src="assets/voiceover/voice_07.wav"></audio>
+  <audio id="vo-8" data-start="322.027" data-duration="45.327" data-track-index="11" data-volume="1" src="assets/voiceover/voice_08.wav"></audio>
+  <audio id="vo-9" data-start="368.104" data-duration="36.154" data-track-index="12" data-volume="1" src="assets/voiceover/voice_09.wav"></audio>
+
+  <audio id="sfx-1" data-start="1.600" data-duration="0.11" data-track-index="13" data-volume="0.5" src="assets/sfx/interface/drop_001.ogg"></audio>
+  <audio id="sfx-2" data-start="104.870" data-duration="0.12" data-track-index="14" data-volume="0.55" src="assets/sfx/impact/impactSoft_medium_000.ogg"></audio>
+  <audio id="sfx-3" data-start="218.230" data-duration="0.14" data-track-index="15" data-volume="0.55" src="assets/sfx/impact/impactSoft_medium_002.ogg"></audio>
+  <audio id="sfx-4" data-start="398.354" data-duration="0.11" data-track-index="16" data-volume="0.4" src="assets/sfx/interface/drop_001.ogg"></audio>
+
+<script>
+  const tl = gsap.timeline({ paused: true, defaults: { ease: "power2.out" } });
+
+  function IN(sel, at, y, dur) {
+    tl.fromTo(sel, { opacity: 0, y: (y === undefined ? 14 : y) },
+      { opacity: 1, y: 0, duration: (dur === undefined ? 0.45 : dur) }, at);
+  }
+  function SC(sel, at) {
+    tl.fromTo(sel, { transform: "scaleX(0)" }, { transform: "scaleX(1)", duration: 0.55, ease: "power2.out" }, at);
+  }
+  function OUT(sel, at) {
+    tl.to(sel, { opacity: 0, duration: 0.5 }, at);
+  }
+
+  const S1 = 0.000, S2 = 43.081, S3 = 86.470, S4 = 137.070, S5 = 183.830,
+        S6 = 227.859, S7 = 278.544, S8 = 321.677, S9 = 367.754, TOT = 407.159;
+
+  // ---- Scene 1 (the Tuesday problem) -------------------------------------
+  IN("#s1-title", S1 + 0.2, 16, 0.7);
+  IN("#d1-mon", S1 + 4.2);
+  IN("#s1-cal .pipe-arrow", S1 + 5.6, 0, 0.35);
+  IN("#d1-tue", S1 + 6.4);
+  IN("#s1-ask", S1 + 9.2);
+  tl.fromTo("#s1-wrong", { opacity: 0, y: 14, rotation: -0.6 }, { opacity: 1, y: 0, rotation: -0.6, duration: 0.5 }, S1 + 11.8);
+  IN("#s1-logs", S1 + 15.4);
+  IN("#s1-ouija", S1 + 21.4, 12, 0.6);
+  IN("#kc-ouija", S1 + 23.0);
+  IN("#kc-forensics", S1 + 27.0);
+  OUT("#s1-inner", S2 - 0.55);
+
+  // ---- Scene 2 (the black box) --------------------------------------------
+  IN("#s2-inner > .board > .main > h1", S2 + 0.15, 22, 0.6);
+  SC("#s2-u", S2 + 0.6);
+  IN("#s2-trace", S2 + 8.6);
+  IN("#sp1", S2 + 11.6, 10, 0.4);
+  IN("#sp2", S2 + 12.8, 10, 0.4);
+  IN("#sp3", S2 + 13.9, 10, 0.4);
+  IN("#sp4", S2 + 15.0, 10, 0.4);
+  IN("#kc-trace", S2 + 3.6);
+  IN("#kc-span", S2 + 16.4);
+  IN("#s2-ingest", S2 + 26.8);
+  IN("#kc-langfuse", S2 + 22.6);
+  IN("#kc-jsonl", S2 + 28.4);
+  IN("#s2-norm", S2 + 32.4);
+  IN("#s2-bb", S2 + 38.2, 12, 0.6);
+  OUT("#s2-inner", S3 - 0.55);
+
+  // ---- Scene 3 (the taxonomy) ---------------------------------------------
+  IN("#s3-inner > .board > .main > h1", S3 + 0.15, 22, 0.6);
+  SC("#s3-u", S3 + 0.6);
+  IN("#kc-taxonomy", S3 + 7.6);
+  IN("#f1", S3 + 14.6, 10, 0.4);
+  tl.fromTo("#s3-hero", { opacity: 0, y: 14, rotation: -0.5 }, { opacity: 1, y: 0, rotation: -0.5, duration: 0.5 }, S3 + 18.4);
+  IN("#f2", S3 + 24.6, 10, 0.4);
+  IN("#f3", S3 + 28.2, 10, 0.4);
+  IN("#f4", S3 + 34.2, 10, 0.4);
+  IN("#f5", S3 + 36.0, 10, 0.4);
+  IN("#kc-signature", S3 + 20.6);
+  IN("#kc-playbook", S3 + 39.6);
+  OUT("#s3-inner", S4 - 0.55);
+
+  // ---- Scene 4 (two-pass) ---------------------------------------------------
+  IN("#s4-inner > .board > .main > h1", S4 + 0.15, 22, 0.6);
+  SC("#s4-u", S4 + 0.6);
+  IN("#s4-rules", S4 + 15.2);
+  ["#rc1", "#rc2", "#rc3", "#rc4", "#rc5", "#rc6", "#rc7", "#rc8", "#rc9"].forEach((sel, i) =>
+    IN(sel, S4 + 18.6 + i * 0.4, 8, 0.35)
+  );
+  IN("#kc-twopass", S4 + 16.6);
+  IN("#s4-flow", S4 + 27.4);
+  IN("#kc-protocol", S4 + 31.2);
+  IN("#kc-precedence", S4 + 34.6);
+  IN("#s4-trade", S4 + 38.2, 12, 0.6);
+  OUT("#s4-inner", S5 - 0.55);
+
+  // ---- Scene 5 (blame ranking) ---------------------------------------------
+  IN("#s5-inner > .board > .main > h1", S5 + 0.15, 22, 0.6);
+  SC("#s5-u", S5 + 0.6);
+  IN("#st1", S5 + 1.2); IN("#pa1", S5 + 1.6, 0, 0.3);
+  IN("#st2", S5 + 1.9); IN("#pa2", S5 + 2.3, 0, 0.3);
+  IN("#st3", S5 + 2.6); IN("#pa3", S5 + 3.0, 0, 0.3);
+  IN("#st4", S5 + 3.3);
+  IN("#kc-blame", S5 + 4.4);
+  IN("#s5-z", S5 + 10.6);
+  tl.fromTo("#zdot", { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.45 }, S5 + 12.4);
+  IN("#zcall", S5 + 12.9, 10, 0.5);
+  IN("#kc-zscore", S5 + 13.8);
+  IN("#kc-baseline", S5 + 16.2);
+  IN("#s5-agree", S5 + 18.2, 10, 0.5);
+  IN("#s5-ev", S5 + 22.4, 10, 0.5);
+  IN("#kc-evidence", S5 + 24.2);
+  tl.fromTo("#s5-verdict", { opacity: 0, y: 14, rotation: -0.6 }, { opacity: 1, y: 0, rotation: -0.6, duration: 0.5 }, S5 + 34.4);
+  IN("#s5-pct", S5 + 29.4);
+  OUT("#s5-inner", S6 - 0.55);
+
+  // ---- Scene 6 (the slow leak) ----------------------------------------------
+  IN("#s6-inner > .board > .main > h1", S6 + 0.15, 22, 0.6);
+  SC("#s6-u", S6 + 0.6);
+  IN("#s6-chart", S6 + 3.8);
+  tl.fromTo("#s6-decay", { opacity: 0 }, { opacity: 1, duration: 1.4 }, S6 + 6.2);
+  tl.fromTo("#s6-kink", { opacity: 0 }, { opacity: 1, duration: 0.6 }, S6 + 6.6);
+  IN("#kc-drift", S6 + 15.0);
+  IN("#s6-rule6", S6 + 32.6, 10, 0.5);
+  IN("#kc-chisq", S6 + 23.2);
+  IN("#kc-pvalue", S6 + 25.4);
+  tl.fromTo("#s6-alarm", { opacity: 0, y: 12, rotation: -0.5 }, { opacity: 1, y: 0, rotation: -0.5, duration: 0.5 }, S6 + 28.2);
+  IN("#kc-alpha", S6 + 29.4);
+  IN("#s6-cusum", S6 + 38.6, 10, 0.5);
+  IN("#kc-cusum", S6 + 39.6);
+  IN("#s6-caveat", S6 + 44.4, 12, 0.6);
+  OUT("#s6-inner", S7 - 0.55);
+
+  // ---- Scene 7 (the report) ---------------------------------------------------
+  IN("#s7-inner > .board > .main > h1", S7 + 0.15, 22, 0.6);
+  SC("#s7-u", S7 + 0.6);
+  IN("#s7-doc", S7 + 7.4);
+  IN("#kc-rca", S7 + 8.6);
+  IN("#s7-doc .sec", S7 + 12.2, 8, 0.4);
+  IN("#s7-doc .mixbar", S7 + 14.2, 0, 0.4);
+  IN("#s7-doc .mgraph", S7 + 17.2, 8, 0.4);
+  IN("#kc-mermaid", S7 + 19.2);
+  IN("#s7-det", S7 + 36.2, 10, 0.5);
+  IN("#kc-determ", S7 + 37.4);
+  IN("#s7-cli", S7 + 30.8);
+  IN("#s7-exports", S7 + 31.6, 10, 0.5);
+  OUT("#s7-inner", S8 - 0.55);
+
+  // ---- Scene 8 (the numbers) ---------------------------------------------------
+  IN("#s8-inner > .board > .main > h1", S8 + 0.15, 22, 0.6);
+  SC("#s8-u", S8 + 0.6);
+  const stats = [
+    ["#sta", "#n-a", 1.0, "0.0"],
+    ["#stb", "#n-b", 1.0, "0.0"],
+    ["#stc", "#n-c", 100, "0"],
+    ["#std", "#n-d", 8, "0"],
+    ["#stf", "#n-f", 128, "0"]
+  ];
+  stats.forEach(([tile, num, val, fmt], i) => {
+    const at = S8 + 9.4 + i * 1.3;
+    IN(tile, at, 14, 0.4);
+    const obj = { v: 0 };
+    tl.fromTo(obj, { v: 0 }, {
+      v: val, duration: 1.1, ease: "power1.out",
+      onUpdate: () => {
+        const t = document.querySelector(num);
+        if (t) t.textContent = (fmt === "0.0") ? obj.v.toFixed(1) : Math.round(obj.v) + (num === "#n-c" ? "%" : (num === "#n-d" ? "/8" : ""));
+      }
+    }, at + 0.2);
+  });
+  IN("#ste", S8 + 24.6, 14, 0.4);
+  IN("#kc-planted", S8 + 5.2);
+  IN("#kc-precision", S8 + 10.8);
+  IN("#kc-recall", S8 + 12.4);
+  IN("#s8-note", S8 + 34.0, 12, 0.6);
+  IN("#kc-replay", S8 + 35.4);
+  OUT("#s8-inner", S9 - 0.55);
+
+  // ---- Scene 9 (recap) -----------------------------------------------------------
+  IN("#s9-inner > .board > .main > h1", S9 + 0.15, 22, 0.6);
+  SC("#s9-u", S9 + 0.6);
+  ["#r9a", "#r9b", "#r9c", "#r9d", "#r9e", "#r9f"].forEach((sel, i) => IN(sel, S9 + 2.4 + i * 4.4, 12, 0.45));
+  IN("#s9-end", S9 + 30.6, 16, 0.8);
+  IN("#kc-glossary", S9 + 32.4);
+
+  window.__timelines["forensiq-lecture"] = tl;
+</script>
+</body>
+</html>
