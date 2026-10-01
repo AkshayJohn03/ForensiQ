@@ -1,5 +1,8 @@
 # ForensiQ — Failure Forensics for AI Pipelines
 
+[![▶ whiteboard explainer video · 6m47s](https://img.shields.io/badge/%E2%96%B6_whiteboard_explainer-6m47s-E8B44A?style=flat-square&logo=googleplay&logoColor=white)](brag-output/brag.mp4)
+
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](pyproject.toml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](ruff.toml)
