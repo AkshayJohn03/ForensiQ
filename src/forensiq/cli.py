@@ -6,9 +6,12 @@
     forensiq analyze --file traces.jsonl       # classify + stage health to stdout
     forensiq report --file traces.jsonl --out rca.md
     forensiq watch --file traces.jsonl --baseline-days 14   # drift alerts (JSON)
+    forensiq replay <trace_id> --file traces.jsonl --at 4   # session step-through
+    forensiq replay --file traces.jsonl --taxonomy F-RET-002  # counterfactual replay
+    forensiq serve                             # OTLP receiver (needs [serve] extra)
 
-Everything runs offline; --langfuse and the LLM second pass are env-guarded
-(see .env.example).
+Everything runs offline; --langfuse, the LLM second pass and the OTLP receiver
+extras are env-guarded (see .env.example).
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from forensiq.ingest.synthetic import SyntheticTraceGenerator
 from forensiq.llm import EchoMockClient, OpenAICompatClient
 from forensiq.patterns.cluster import FailureClusterer
 from forensiq.patterns.drift import DriftDetector
+from forensiq.replay import render_replay, replay_to_json
 from forensiq.report.rca import RCAReportGenerator, ReportInputs
 from forensiq.taxonomy.classifier import FailureClassifier
 
@@ -52,6 +56,24 @@ def _load_traces(file: str | None, langfuse: bool) -> tuple[list, list[str]]:
         JSONLTraceLoader() if path.suffix.lower() in (".jsonl", ".ndjson") else JSONTraceLoader()
     )
     return loader.load(path), loader.warnings
+
+
+def _load_trace_from_store(db: str, trace_id: str):
+    """Session-replay lookup from a store file (.jsonl → pure-python store,
+    .duckdb/.ddb → DuckDBTraceStore; duckdb missing → actionable error)."""
+    path = Path(db)
+    if path.suffix.lower() in (".duckdb", ".ddb"):
+        from forensiq.ingest.duckdb_store import DuckDBTraceStore
+
+        store = DuckDBTraceStore(path)
+    else:
+        from forensiq.ingest.store import JSONLTraceStore
+
+        store = JSONLTraceStore(path)
+    trace = store.get_trace(trace_id)
+    if trace is None:
+        raise IngestError(f"trace {trace_id!r} not found in store {path}")
+    return trace
 
 
 def _analyze(traces, settings) -> ReportInputs:
@@ -176,6 +198,28 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
+    if args.trace_id:
+        return cmd_session_replay(args)
+    return cmd_counterfactual_replay(args)
+
+
+def cmd_session_replay(args: argparse.Namespace) -> int:
+    """Step-through session replay of one recorded trace."""
+    if args.db:
+        trace = _load_trace_from_store(args.db, args.trace_id)
+    else:
+        traces, _ = _load_traces(args.file, args.langfuse)
+        trace = next((t for t in traces if t.trace_id == args.trace_id), None)
+        if trace is None:
+            raise IngestError(f"trace {args.trace_id!r} not found in the given source")
+    if args.json:
+        print(replay_to_json(trace, at=args.at))
+    else:
+        print(render_replay(trace, at=args.at))
+    return 0
+
+
+def cmd_counterfactual_replay(args: argparse.Namespace) -> int:
     settings = load_settings()
     traces, _ = _load_traces(args.file, args.langfuse)
     classifier = FailureClassifier(
@@ -195,6 +239,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
         lift = ", ".join(f"{k}{v:+.2f}" for k, v in attempt.predicted_lift.items())
         print(f"  {attempt.mutation:<42} resolved={attempt.resolved} lift[{lift}]")
     return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    from forensiq.serve import main_serve
+
+    return main_serve(host=args.host, port=args.port, buffer_dir=args.buffer_dir)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -231,10 +281,23 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--baseline-days", type=int, default=14)
     watch.set_defaults(func=cmd_watch)
 
-    replay = sub.add_parser("replay", help="counterfactual replay of one failure (simulated)")
+    replay = sub.add_parser(
+        "replay",
+        help="session step-through of one trace (with TRACE_ID) or counterfactual replay of one failure (without)",
+    )
+    replay.add_argument("trace_id", nargs="?", default=None, help="trace id to step through (session replay)")
     add_common(replay)
-    replay.add_argument("--taxonomy", help="replay the first failure of this taxonomy id")
+    replay.add_argument("--db", help="store file to look up the trace (.jsonl store or .duckdb/.ddb)")
+    replay.add_argument("--at", type=int, default=None, help="session replay: show cumulative state at step Tn")
+    replay.add_argument("--json", action="store_true", help="session replay: emit JSON instead of text")
+    replay.add_argument("--taxonomy", help="counterfactual: replay the first failure of this taxonomy id")
     replay.set_defaults(func=cmd_replay)
+
+    serve = sub.add_parser("serve", help="run the OTLP trace receiver (needs 'forensiq[serve]')")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=4318)
+    serve.add_argument("--buffer-dir", default="forensiq-buffer")
+    serve.set_defaults(func=cmd_serve)
 
     return parser
 
