@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "forensiq"
 version = "0.1.0"
-description = "Failure forensics for AI pipelines: trace ingestion, failure taxonomy, root-cause attribution, drift detection, RCA reports."
+description = "SIEM for AI: trace ingestion (OTLP/Langfuse/JSONL), failure taxonomy, root-cause attribution, drift detection, causal-chain postmortems."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Akshay John Xavier" }]
-keywords = ["rag", "llm", "observability", "failure-analysis", "rca", "langfuse"]
+keywords = ["rag", "llm", "observability", "siem", "incident-response", "opentelemetry", "otlp", "duckdb", "failure-analysis", "rca", "langfuse"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -33,6 +33,10 @@ dependencies = [
 # The Langfuse REST pull uses httpx directly (already a required dep). This extra
 # is reserved for the langfuse SDK itself (e.g. re-exporting traces back).
 langfuse = []
+# OTLP trace receiver (FastAPI + uvicorn) — offline-tested via TestClient.
+serve = ["fastapi>=0.110", "uvicorn>=0.27"]
+# High-throughput analytical storage (embedded, no server).
+ingest = ["duckdb>=1.0"]
 
 [project.scripts]
 forensiq = "forensiq.cli:main"

@@ -1,4 +1,4 @@
-# ForensiQ — Failure Forensics for AI Pipelines
+# ForensiQ — SIEM for AI: the black box flight recorder for agent pipelines
 
 [![▶ whiteboard explainer video · 6m47s](https://img.shields.io/badge/%E2%96%B6_whiteboard_explainer-6m47s-E8B44A?style=flat-square&logo=googleplay&logoColor=white)](brag-output/brag.mp4)
 
@@ -14,13 +14,25 @@
 
 **What this project does.** ForensiQ is the **flight recorder + detective** for AI pipelines:
 
-- **It records.** Every request leaves a trace — what was searched, what was found, what was sent to the model, what came back. ForensiQ ingests those traces (from Langfuse, the industry's standard flight-recorder, or plain JSON files) and normalises them.
+- **It records.** Every request leaves a trace — what was searched, what was
+  found, what was sent to the model, what came back. ForensiQ ingests those
+  traces from anywhere: **OpenTelemetry OTLP/JSON** (any OTel-instrumented
+  app, via the built-in receiver or a file), **Langfuse** (the industry's
+  standard flight recorder), or plain JSON/JSONL — and normalizes them all.
 - **It names the failure.** A rulebook of known failure types — "search returned nothing" (F-RET-001), "prompt got silently truncated" (F-PROMPT-002), "model got stuck repeating itself" (F-GEN-003), and so on — is checked first; only genuinely ambiguous cases go to an AI classifier. On a seeded 560-trace corpus with planted failures, this two-pass approach scores **precision and recall of 1.0** against the known ground truth.
 - **It points at the guilty stage.** For each failure it ranks *which stage* of the assembly line is to blame, with the evidence quoted from the trace. On planted-failure fixtures it puts the true root cause first **100% of the time**.
 - **It spots the slow leak.** Some rot isn't a crash — search quality quietly degrades over weeks. A statistical drift detector (a hand-rolled chi-square test) compares this week's failure mix against a baseline window and raises an alarm when the shift is too big to be luck (and stays quiet when it is luck — no false alarms at the 1% significance level).
 - **It writes the incident report.** A generated RCA (root-cause-analysis) document with a timeline, a blame diagram, the evidence, and a mapped fix from a playbook — the artifact a manager actually reads the morning after.
 
-**Measured outcomes:** 128 automated tests pass offline in ~4s — including the planted-ground-truth scoring above, clustering that recovers all 8 planted failure families perfectly, and a counterfactual replay module ("would raising the result count have fixed this?") that is honest about being an estimate. It speaks the exact vocabulary of the author's RAG_showcase pipeline, so traces flow in with zero glue code.
+**Measured outcomes:** 210 automated tests pass offline in ~5s — including
+the planted-ground-truth scoring above, clustering that recovers all 8
+planted failure families perfectly, OTLP fixture parsing (ids, nanos, attr
+shapes, skip reports), an ASGI-tested receiver (auth 401/200, JSONL
+rotation), a causal-chain postmortem on planted failures, deterministic
+session replay, and a counterfactual replay module ("would raising the
+result count have fixed this?") that is honest about being an estimate. It
+speaks the exact vocabulary of the author's RAG_showcase pipeline, so traces
+flow in with zero glue code — and any OpenTelemetry app feeds it via OTLP.
 
 **Most RAG observability stops at "the answer was bad".** ForensiQ answers the
 senior questions: *which* failure is it (by taxonomy id), *which stage* caused
@@ -49,6 +61,117 @@ report/      deterministic markdown RCA: executive summary, blame graph,
              mermaid timeline, cluster cards, mapped fix playbooks,
              postmortem + ticket exports
 ```
+
+## SIEM for AI — the black box flight recorder
+
+Langfuse and Arize Phoenix are **dashboards**: they show you aggregates —
+latency percentiles, token spend, a satisfaction score trending down. They
+answer *"is the pipeline healthy?"*. They do not answer the question you have
+at 2 a.m. when an agent misbehaved and a customer is asking why: *what exactly
+happened in that one request, and what do I file?*
+
+ForensiQ is the other half of that discipline — the **SIEM half**:
+
+| | Dashboards (Langfuse / Phoenix) | ForensiQ (SIEM for AI) |
+|---|---|---|
+| Unit of work | the aggregate | **the incident** |
+| Question | "is quality trending down?" | "**which request went wrong, why, and what's the fix?**" |
+| Output | charts to eyeball | a **named failure** (taxonomy id), a blame ranking with quoted evidence, a causal chain, a mapped playbook |
+| Post-incident | export to CSV, start guessing | **postmortem + ticket exports**, deterministic — two runs over the same trace are byte-identical, so the report diffs like code |
+| Sustained change | visible in the trend line | **drift alarms** (chi-square + CUSUM) that fire on the ramp, not the blip |
+
+And like a flight recorder, it is **zero-invasive on the read side and
+picky about nothing on the write side**: it records what your pipeline
+already emits (OpenTelemetry, Langfuse, or plain JSONL — see
+[Ingest anything](#ingest-anything-otlp--langfuse--jsonl)), normalizes it,
+and keeps a **session replay** so you can step back through any request,
+span by span, exactly as the pipeline experienced it.
+
+## Ingest anything: OTLP + Langfuse + JSONL
+
+Any OpenTelemetry-instrumented app can feed ForensiQ with zero glue code.
+Point your OTel SDK's OTLP/HTTP exporter at the receiver:
+
+```bash
+pip install 'forensiq[serve]'
+export FORENSIQ_API_KEYS=my-dev-key            # unset = open receiver (dev)
+forensiq serve --host 127.0.0.1 --port 4318    # buffers JSONL to ./forensiq-buffer/
+```
+
+```bash
+# any OTel SDK exporting OTLP/JSON lands here (auth optional but recommended):
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+curl -X POST http://127.0.0.1:4318/v1/traces \
+  -H "X-ForensiQ-Key: my-dev-key" -H "Content-Type: application/json" \
+  --data-binary @otlp_export.json
+```
+
+The parser (`ingest/otlp.py`) speaks the full OTLP/JSON shape:
+`resourceSpans → scopeSpans → spans`, hex `traceId`/`spanId`/`parentSpanId`
+(any case, `0x`-prefixed or base64-encoded), nanosecond timestamps
+(`startTimeUnixNano`/`endTimeUnixNano`/`durationNanos`), attributes as KV
+lists **or** plain maps. OTel span names and semantic conventions map onto
+ForensiQ's stage vocabulary — OpenInference `span.kind` (`LLM`, `RETRIEVER`,
+`EMBEDDING`, `RERANKER`, `GUARDRAIL`, ...), `gen_ai.*` usage/finish-reason
+attrs, vector-DB client names (`qdrant.query`, `chroma.search`) — and
+anything unrecognized degrades to `tool` instead of failing ingestion.
+Malformed spans are skipped with a **skip report** (counts + reasons), never
+raised: a poisoned export still yields every parseable trace.
+
+Storage scales with you behind one seam (`ingest/store.py::TraceStore`):
+
+- `JSONLTraceStore` — pure python, default, human-inspectable files.
+- `DuckDBTraceStore` (`pip install 'forensiQ[ingest]'`) — embedded DuckDB for
+  high-throughput analytical queries over large corpora: pip-installable,
+  offline, **no ClickHouse server to babysit**. Same Protocol, same queries
+  (`traces_by_time`, `spans_by_trace`, `failure_mix_per_day`).
+
+Langfuse REST pulls and the RAG_showcase/eval-record shapes below feed the
+same normalized `Trace`/`Span` model — one forensics tool over all of them.
+
+## Session replay
+
+```bash
+forensiq replay <trace_id> --file traces.jsonl --at 4
+```
+
+```
+Session replay: q-1042 (rag_showcase, 2026-08-14T09:12:00+00:00, 4 spans)
+  T1   embed     ok          12.0ms  model=MiniLM-L6, token_count=42
+  T2   retrieve  ok          44.0ms  query=What is the SAF-114..., top_k=5, hit_count=5
+  T3   rerank    ok          30.0ms  rerank_delta=0.02
+  T4   generate  ok        1800.0ms  finish_reason=stop, output=The SAF-114 requires...
+  totals: tokens_in=1204 tokens_out=210 cost=0.0020
+
+state at T4 (cumulative through step 4):
+  hit_count = 5
+  hit_scores = [0.31, 0.28, 0.22, 0.19, 0.11]
+  ...
+  counters: spans_seen=4 tokens_in=1204 tokens_out=210 cost=0.0020
+```
+
+Each step prints the span's stage, duration, status and its **state delta**
+(what it added or changed vs. everything before it). `--at Tn` aggregates the
+cumulative state through step Tn — *"what did the pipeline know when step 4
+ran?"* — which is exactly the question you ask when deciding where a bad
+decision entered. `--json` emits the same replay as JSON. Deterministic and
+offline: same trace, byte-identical output. (`replay` without a trace id
+still runs the counterfactual what-if simulation — see
+[Counterfactual replay limits](#counterfactual-replay-limits).)
+
+The companion artifact is the **incident postmortem**
+(`RCAReportGenerator.generate_postmortem(trace, failures)`): a single-page
+report with an explicit **CAUSAL CHAIN** —
+
+> **1. Trigger** (the user prompt) → **2. Poisoning** (which retrieved chunks
+> entered the prompt, weakest score highlighted) → **3. Divergence** (what the
+> model produced) → **4. Validator failure** (which guardrail *should* have
+> caught it and why it didn't — absent guard, rule-coverage gap, or late
+> block) → **5. Blast radius** (downstream steps consumed the output; user-facing or contained)
+
+— rendered as markdown with a mermaid flow, plus a plain-text ticket export
+(`postmortem_ticket`). The chain is extracted from the recorded trace, not
+narrated by an LLM, so it is quotable in an incident review.
 
 ## Why senior-level (and what the trade-offs are)
 
@@ -82,7 +205,7 @@ forensiq ingest  --file traces.jsonl
 forensiq analyze --file traces.jsonl
 forensiq report  --file traces.jsonl --out rca.md
 forensiq watch   --file traces.jsonl --baseline-days 14   # JSON drift alerts
-forensiq replay  --file traces.jsonl --taxonomy F-PROMPT-001
+forensiq replay  <trace_id> --file traces.jsonl --at 4    # session step-through
 ```
 
 ```python
@@ -178,9 +301,11 @@ tool covers all of them.
 ```mermaid
 flowchart LR
     subgraph ingest
-        L[JSONL / JSON / eval records] --> N[Trace + Span schema]
+        OTLP[OTLP/JSON receiver<br/>or file · env-guarded auth] --> N[Trace + Span schema]
+        L[JSONL / JSON / eval records] --> N
         LF[Langfuse REST<br/>env-guarded] --> N
         SYN[SyntheticTraceGenerator<br/>planted failures + drift] --> N
+        N --> S[(TraceStore:<br/>JSONL files or embedded DuckDB)]
     end
     subgraph analysis
         N --> C[FailureClassifier<br/>rules → optional LLM]
@@ -196,7 +321,8 @@ flowchart LR
         CL --> REP
         D --> REP
         REP --> MD[markdown RCA<br/>+ mermaid + playbooks]
-        REP --> PM[postmortem + ticket exports]
+        REP --> PM[postmortem + ticket exports<br/>with causal chain]
+        N --> RP[session replay<br/>step-through + state deltas]
     end
 ```
 
@@ -208,21 +334,30 @@ src/forensiq/
     schema.py       Trace/Span model, stage vocabulary + RAG_showcase aliases
     loaders.py      JSONLTraceLoader · JSONTraceLoader · LangfuseTraceLoader ·
                     spans_from_dicts (AegisGate/SwarmResearch hook adapter)
+    otlp.py         OpenTelemetry OTLP/JSON parser (hex ids, nanos, KV/map
+                    attrs, OpenInference + gen_ai.* stage hints, skip report)
+    store.py        TraceStore Protocol · JSONLTraceStore (pure python)
+    duckdb_store.py DuckDBTraceStore (optional extra [ingest]; lazy import)
     synthetic.py    seeded 28-day corpus, 8 planted failure modes, day-15 drift
+  serve.py          optional FastAPI OTLP receiver ([serve] extra): POST
+                    /v1/traces + /v1/otlp/v1/traces → rotating JSONL buffer,
+                    X-ForensiQ-Key auth (SHA-256 at rest, disabled-with-warning)
   taxonomy/
     classifier.py   two-pass classifier; evidence chains; precedence rules
   attribution/
     health.py       stage cards, groundedness (anchored tokens + negation guard)
     blame.py        per-stage directional z-scores vs healthy baseline → ranking
     replay.py       PipelineAdapter protocol · SimulatedAdapter effect model
+  replay.py         session replay: step-through timeline, --at cumulative state
   patterns/
     cluster.py      hand-rolled TF-IDF, average linkage, k-means fallback
     drift.py        chi-square GOF (pooled small counts) + CUSUM, JSON alerts
   report/
     rca.py          deterministic markdown RCA, mermaid, playbooks, exports
+    causal_chain.py trigger → poisoning → divergence → validator gap → blast radius
   llm.py            LLMClient Protocol · OpenAICompatClient · EchoMockClient
   config.py         pydantic-settings (FORENSIQ_* env prefix)
-  cli.py            demo / ingest / analyze / report / watch / replay
+  cli.py            demo / ingest / analyze / report / watch / replay / serve
 ```
 
 ## Failure taxonomy
@@ -314,6 +449,7 @@ All optional, `FORENSIQ_` env prefix (see [.env.example](.env.example)):
 | `FORENSIQ_LLM_ENABLED` | false | enable the pass-2 LLM (needs key) |
 | `FORENSIQ_LLM_BASE_URL` / `FORENSIQ_LLM_API_KEY` / `FORENSIQ_LLM_MODEL` | — | any OpenAI-compatible endpoint |
 | `LANGFUSE_HOST` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | — | required for `ingest --langfuse` |
+| `FORENSIQ_API_KEYS` | — | receiver auth (`X-ForensiQ-Key`), comma-separated raw keys; only SHA-256 hashes stored; **unset = open receiver with warning** |
 
 ## Testing
 
@@ -328,9 +464,15 @@ synthetic corpus, blame top-1 stage correct in ≥ 80% of targeted fixtures,
 chi-square drift firing on the planted day-15 degradation while the stable
 window stays quiet at α=0.01, TF-IDF clustering recovering planted failure
 families (intra-cluster distance < inter-cluster), loaders round-tripping
-portfolio span dicts. No test touches network; `OpenAICompatClient` and the
-Langfuse REST path are env-guarded and exercised only through recorded
-fixtures / the offline mock.
+portfolio span dicts. The OTLP parser is exercised against fixture
+`ExportTraceServiceRequest` bodies (id/timestamp edge cases, KV-list and map
+attributes, malformed-span skip reports), the receiver through the ASGI
+TestClient (401/200 auth, JSONL buffering + rotation), the causal-chain
+postmortem on a planted-failure fixture, and session replay for
+determinism. No test touches network; `OpenAICompatClient`, the Langfuse
+REST path and the receiver are env-guarded and exercised offline. DuckDB
+store tests `pytest.importorskip` when the `[ingest]` extra is absent — the
+pure-python `JSONLTraceStore` always runs in its place.
 
 ## Production notes
 
@@ -368,7 +510,8 @@ fixtures / the offline mock.
 
 - [ ] Segment-aware baselines (per query-shape / per tenant blame)
 - [ ] Predicted-vs-actual calibration report for replay adapters
-- [ ] Streaming ingestion (consume trace tails instead of files)
+- [x] Streaming ingestion — the OTLP receiver (`forensiq serve`) consumes live trace exports; tail-follow of JSONL next
+- [ ] DuckDB-backed drift baselines (weekly mix vectors persisted next to the traces)
 - [ ] LLM-judge groundedness behind the existing `LLMClient` Protocol
 - [ ] Per-failure-type SLO burn alerts wired to the drift payloads
 
