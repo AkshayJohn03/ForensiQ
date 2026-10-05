@@ -22,6 +22,8 @@ from forensiq.attribution.health import HealthReport
 from forensiq.ingest.schema import Stage, Trace
 from forensiq.patterns.cluster import ClusterCard
 from forensiq.patterns.drift import DriftReport
+from forensiq.report import causal_chain
+from forensiq.report.causal_chain import clip, quote
 from forensiq.taxonomy.classifier import FailureRecord
 
 TAXONOMY: dict[str, dict[str, str]] = {
@@ -383,13 +385,177 @@ class RCAReportGenerator:
         add("")
         add(
             "Postmortem template: `RCAReportGenerator.postmortem(trace, failure, candidates)` · "
-            "Plain ticket text: `RCAReportGenerator.ticket(failure, trace)`. "
+            "Incident postmortem with causal chain: `RCAReportGenerator.generate_postmortem(trace, failure_records)` · "
+            "Plain ticket text: `RCAReportGenerator.ticket(failure, trace)` / "
+            "`RCAReportGenerator.postmortem_ticket(trace, failure_records)`. "
             "Full per-trace evidence is attached to every FailureRecord."
         )
         add("")
         return "\n".join(lines)
 
     # -- exports ---------------------------------------------------------------
+
+    def generate_postmortem(self, trace: Trace, failure_records: list[FailureRecord]) -> str:
+        """Single-page incident postmortem with an explicit CAUSAL CHAIN.
+
+        The chain reads like a security-incident timeline (SIEM for AI):
+        trigger (user prompt) -> poisoning (context that entered the prompt)
+        -> divergence (what the model produced) -> validator failure (which
+        guardrail should have caught it and why it didn't) -> blast radius
+        (downstream steps affected). Deterministic: same trace + records,
+        byte-identical markdown.
+        """
+        records = list(failure_records)
+        primary = records[0] if records else None
+        if primary is None:
+            raise ValueError("generate_postmortem needs at least one FailureRecord")
+        meta = self.taxonomy.get(primary.taxonomy_id, {})
+
+        trigger_span, trigger_text = causal_chain.find_trigger(trace)
+        poison = causal_chain.find_poisoning(trace)
+        divergence = causal_chain.find_divergence(trace)
+        validator = causal_chain.find_validator_gap(trace, primary)
+        blast = causal_chain.find_blast_radius(trace, primary)
+
+        lines: list[str] = []
+        add = lines.append
+        add(f"# Incident postmortem — {trace.trace_id}")
+        add("")
+        add(
+            f"**Failure**: {primary.taxonomy_id} — {meta.get('title', primary.taxonomy_id)}"
+            + (f" (+{len(records) - 1} correlated)" if len(records) > 1 else "")
+        )
+        add(f"**Pipeline**: {trace.pipeline_name} · **Timestamp**: {trace.ts.isoformat()}")
+        add(
+            f"**Confidence**: {primary.confidence:.2f} ({primary.source}) · "
+            f"**Blamed stage**: {primary.stage}"
+        )
+        add("")
+
+        add("## CAUSAL CHAIN")
+        add("")
+        add("### 1. Trigger (user prompt)")
+        add("")
+        trigger_ref = f"`{trigger_span.span_id}` ({trigger_span.stage})" if trigger_span else "—"
+        add(f"- Span: {trigger_ref}")
+        add(f"- Prompt: {quote(trigger_text) if trigger_text else '(not recorded in trace)'}")
+        add("")
+        add("### 2. Poisoning (context that entered the prompt)")
+        add("")
+        poison_span = poison.get("span")
+        add(f"- Retrieval span: `{poison_span.span_id}`" if poison_span else "- Retrieval span: —")
+        add(f"- Chunks delivered: {poison.get('hit_count', 'n/a')} (top_k={poison.get('top_k', 'n/a')})")
+        if poison.get("weakest") is not None:
+            add(
+                f"- Weakest chunk score: **{poison['weakest']:.3f}**"
+                + (f" (mean {poison['mean']:.3f})" if poison.get("mean") is not None else "")
+                + " — prime suspect for the degraded answer"
+            )
+        if poison.get("context"):
+            add(f"- Context as sent to the model: \"{poison['context']}\"")
+        add("")
+        add("### 3. Divergence (what the model produced)")
+        add("")
+        divergence_span = divergence.get("span")
+        add(f"- Generation span: `{divergence_span.span_id}`" if divergence_span else "- Generation span: —")
+        if divergence.get("finish_reason"):
+            add(f"- finish_reason: `{divergence['finish_reason']}`")
+        add(f"- Output: \"{divergence.get('output') or '(empty)'}\"")
+        add("")
+        add("### 4. Validator failure (guardrail gap)")
+        add("")
+        add(f"- Should have caught it: {validator['expected']}")
+        add(f"- Why it didn't: {validator['why']}")
+        add("")
+        add("### 5. Blast radius (downstream impact)")
+        add("")
+        if blast["count"]:
+            stages = ", ".join(blast["stages"]) or "none"
+            add(f"- {blast['count']} downstream span(s) consumed the output: {stages}")
+            add(f"- Downstream cost: {blast['cost']:.4f}")
+        else:
+            add("- No downstream pipeline spans — the divergence reached the consumer directly.")
+        add(f"- User-facing: {'YES — the bad output left the pipeline' if blast['user_facing'] else 'no (contained)'}")
+        add("")
+
+        add("```mermaid")
+        add("graph TD")
+        trigger_label = clip(trigger_text, 60) if trigger_text else "user prompt"
+        poison_label = (
+            f'{poison.get("hit_count", "?")} chunks, weakest {poison["weakest"]:.3f}'
+            if poison.get("weakest") is not None
+            else "context unknown"
+        )
+        divergence_label = divergence.get("output") or "empty output"
+        facing = " — user-facing" if blast["user_facing"] else ""
+        for label, text in (
+            ("TRIGGER", trigger_label),
+            ("POISONING", poison_label),
+            ("DIVERGENCE", divergence_label),
+            ("VALIDATOR GAP", f'{meta.get("stage", primary.stage)} not guarded'),
+            ("BLAST RADIUS", f'{blast["count"]} downstream span(s){facing}'),
+        ):
+            safe = str(text).replace('"', "'")  # mermaid labels cannot contain raw double quotes
+            add(f'    {label[0]}["{label}: {safe}"]')
+        add("    T --> P --> D --> V --> B")
+        add("```")
+        add("")
+
+        add("## Evidence")
+        add("")
+        for record in records:
+            add(f"- **{record.taxonomy_id}** ({record.source}, confidence {record.confidence:.2f})")
+            for ev in record.evidence[:4]:
+                note = f" — {ev.note}" if ev.note else ""
+                add(f"  - `{ev.span_id}` `{ev.key}={ev.value}`{note}")
+        add("")
+        add("## Resolution")
+        add("")
+        add(self.playbooks.get(primary.taxonomy_id, "<mapped fix>"))
+        add("")
+        add("## Action items")
+        add("")
+        add("- [ ] Close the validator gap (see section 4) or document why the guard is absent.")
+        add("- [ ] Add an alert for this taxonomy id so the next occurrence pages instead of waiting for a human.")
+        add("- [ ] Verify the fix with `forensiq replay` counterfactual mode before shipping.")
+        add("")
+        return "\n".join(lines)
+
+    def postmortem_ticket(self, trace: Trace, failure_records: list[FailureRecord]) -> str:
+        """Plain-text ticket export of the causal chain (no markdown)."""
+        records = list(failure_records)
+        primary = records[0] if records else None
+        if primary is None:
+            raise ValueError("postmortem_ticket needs at least one FailureRecord")
+        meta = self.taxonomy.get(primary.taxonomy_id, {})
+        trigger_span, trigger_text = causal_chain.find_trigger(trace)
+        poison = causal_chain.find_poisoning(trace)
+        divergence = causal_chain.find_divergence(trace)
+        validator = causal_chain.find_validator_gap(trace, primary)
+        blast = causal_chain.find_blast_radius(trace, primary)
+
+        lines = [
+            f"[{primary.taxonomy_id}] {meta.get('title', primary.taxonomy_id)} — incident ticket",
+            f"trace_id: {trace.trace_id}",
+            f"ts: {trace.ts.isoformat()}  pipeline: {trace.pipeline_name}",
+            "CAUSAL CHAIN:",
+            f"  TRIGGER   : {trigger_span.stage if trigger_span else '?'} span "
+            f"{trigger_span.span_id if trigger_span else '-'} prompt={clip(trigger_text, 80) or '(not recorded)'}",
+            f"  POISONING : {poison.get('hit_count', 'n/a')} chunks entered the prompt"
+            + (f", weakest score {poison['weakest']:.3f}" if poison.get("weakest") is not None else ""),
+            f"  DIVERGENCE: \"{clip(divergence.get('output') or '(empty)', 80)}\""
+            + (f" (finish_reason={divergence['finish_reason']})" if divergence.get("finish_reason") else ""),
+            f"  VALIDATOR : {validator['expected']}",
+            f"              why it didn't: {validator['why']}",
+            f"  BLAST     : {blast['count']} downstream span(s) [{', '.join(blast['stages']) or 'none'}]"
+            + (" — USER-FACING" if blast["user_facing"] else ""),
+            "evidence:",
+        ]
+        for ev in primary.evidence:
+            note = f" ({ev.note})" if ev.note else ""
+            lines.append(f"  - {ev.span_id}.{ev.key} = {clip(ev.value, 100)}{note}")
+        lines.append(f"suggested_fix: {self.playbooks.get(primary.taxonomy_id, 'triage manually')}")
+        return "\n".join(lines)
 
     def postmortem(
         self, trace: Trace, failure: FailureRecord, candidates: list[BlameCandidate] | None = None
